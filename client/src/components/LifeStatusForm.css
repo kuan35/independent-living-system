@@ -1,0 +1,19 @@
+/* client/src/components/LifeStatusForm.css */
+
+textarea.ant-input {
+  font-size: 16px !important;
+  line-height: 1.6;
+  padding: 12px;
+  border-radius: 8px;
+  border: 2px solid #e0e0e0;
+}
+
+textarea.ant-input:focus,
+textarea.ant-input:hover {
+  border-color: #1976d2;
+}
+
+textarea.ant-input::placeholder {
+  color: #aaa;
+  line-height: 1.6;
+}
