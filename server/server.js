@@ -1,11 +1,13 @@
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 const multer = require('multer');
-const path = require('path');
 const fs = require('fs');
 const { generateWord } = require('./utils/wordGenerator');
-const { packageAndUpload } = require('./utils/driveUploader');
+const { packageAndUpload, uploadJsonRecord } = require('./utils/driveUploader');
 require('dotenv').config();
+const { initDatabase, db, getUniqueCaseName, insertVersion } = require('./utils/database');
+initDatabase();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -14,6 +16,9 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// ==================== 管理員路由 ====================
+app.use('/api/admin', require('./routes/admin'));
 
 // ==================== 設定資料夾路徑 ====================
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -56,7 +61,6 @@ const upload = multer({
 });
 
 // ==================== API 路由 ====================
-
 app.get('/api/test', (req, res) => {
   res.json({ 
     success: true, 
@@ -182,18 +186,47 @@ app.post('/api/submit-form', upload.array('audioFiles', 50), async (req, res) =>
     
     // ... 保留所有原有的 console.log（為了簡潔這裡省略，實際使用時保留）
     
+    // ==================== 處理簽名 ====================
+    const signaturesDir = path.join(uploadsDir, 'signatures');
+    if (!fs.existsSync(signaturesDir)) fs.mkdirSync(signaturesDir, { recursive: true });
+
+    const signatureFields = [
+      { key: 'applicantSignature',     label: '申請人簽名' },
+      { key: 'peerSupporterSignature', label: '同儕支持員簽名' },
+      { key: 'socialWorkerSignature',  label: '社工員簽名' },
+      { key: 'supervisorSignature',    label: '主管簽名' },
+    ];
+    const signatureMapping = {};
+    const sigTimestamp = Date.now();
+
+    signatureFields.forEach(({ key, label }) => {
+      const dataUrl = formData[key];
+      if (dataUrl && dataUrl.startsWith('data:image/')) {
+        const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+        const fileName = `${formData.name || 'unknown'}_${label}_${sigTimestamp}.png`;
+        const filePath = path.join(signaturesDir, fileName);
+        fs.writeFileSync(filePath, Buffer.from(base64, 'base64'));
+        signatureMapping[key] = filePath;
+        console.log(`✓ 簽名已儲存: ${fileName}`);
+      }
+    });
+
+    // 存 DB 前移除 base64（避免 DB 膨脹）
+    const formDataForDB = { ...formData };
+    signatureFields.forEach(({ key }) => delete formDataForDB[key]);
+
     // ==================== 生成 Word 文件 ====================
     console.log('\n========== 生成 Word 文件 ==========');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
     const wordFileName = `${formData.name || 'unknown'}_自立生活支持計畫_${timestamp}.docx`;
     const wordFilePath = path.join(documentsDir, wordFileName);
 
-    await generateWord(formData, processedAudioMapping, wordFilePath);
+    await generateWord(formData, processedAudioMapping, wordFilePath, signatureMapping);
     console.log('✓ Word 文件已生成:', wordFilePath);
 
     // ==================== 打包並上傳到 Google Drive ====================
     console.log('\n========== 上傳到 Google Drive ==========');
-    
+
     let uploadResult = null;
     try {
       uploadResult = await packageAndUpload(
@@ -201,7 +234,8 @@ app.post('/api/submit-form', upload.array('audioFiles', 50), async (req, res) =>
         wordFilePath,
         processedAudioMapping,
         audioDir,
-        archivesDir
+        archivesDir,
+        signatureMapping
       );
       console.log('✓ 上傳成功！');
       console.log('  Drive 檔案名稱:', uploadResult.driveFileName);
@@ -210,6 +244,38 @@ app.post('/api/submit-form', upload.array('audioFiles', 50), async (req, res) =>
       console.error('⚠️  上傳到 Google Drive 失敗:', uploadError.message);
       console.log('⚠️  檔案已儲存在本地，但未上傳到雲端');
     }
+
+    // ==================== 儲存個案到 SQLite ====================
+    try {
+      const caseName = getUniqueCaseName(formData.name || '未命名');
+      const insertResult = db.prepare(`
+        INSERT INTO cases (name, submit_date, form_data, audio_mapping, drive_link, drive_file_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        caseName,
+        formDataForDB.formDate || new Date().toISOString().split('T')[0],
+        JSON.stringify(formDataForDB),
+        JSON.stringify(processedAudioMapping),
+        uploadResult ? uploadResult.driveWebViewLink : null,
+        uploadResult ? uploadResult.driveFileId : null
+      );
+      insertVersion(
+        insertResult.lastInsertRowid,
+        '初始版本',
+        '首次送出',
+        formData,
+        uploadResult ? uploadResult.driveWebViewLink : null,
+        uploadResult ? uploadResult.driveFileId : null
+      );
+      console.log('✓ 個案資料已存入資料庫，名稱：', caseName);
+    } catch (dbError) {
+      console.error('DB 儲存失敗（不影響表單送出）：', dbError.message);
+    }
+
+    // ==================== 非同步上傳 JSON 紀錄 ====================
+    uploadJsonRecord(formDataForDB, formData.name || 'unknown').catch(err => {
+      console.error('⚠️  JSON 紀錄上傳 Drive 失敗:', err.message);
+    });
 
     // ==================== 回傳結果 ====================
     console.log('\n========== 處理完成 ==========');
@@ -252,10 +318,59 @@ app.post('/api/submit-form', upload.array('audioFiles', 50), async (req, res) =>
   }
 });
 
-app.get('/health', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// ==================== AI 整理路由 ====================
+const OpenAI = require('openai');
+const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+app.post('/api/ai-summary', async (req, res) => {
+  try {
+    const { transcript } = req.body;
+
+    if (!transcript || typeof transcript !== 'string' || transcript.trim() === '') {
+      return res.status(400).json({ success: false, error: '缺少 transcript 或內容為空' });
+    }
+
+    console.log('\n========== AI 整理請求 ==========');
+    console.log('原始文字長度:', transcript.length);
+
+    const completion = await openaiClient.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: '你是一個社工助理，以下是社工與個案的對話紀錄，請整理成第一人稱（個案角度）的重點摘要，去除對話中的問句與重複內容，保留重要資訊，使用繁體中文，100-200字以內。'
+        },
+        { role: 'user', content: transcript }
+      ],
+      max_tokens: 400,
+      temperature: 0.3
+    });
+
+    const summary = completion.choices[0].message.content;
+    console.log('AI 整理完成，摘要長度:', summary.length);
+    console.log('========================================\n');
+
+    res.json({ success: true, summary });
+  } catch (error) {
+    console.error('AI 整理失敗：', error);
+    if (error.status === 401) {
+      return res.status(500).json({ success: false, error: 'OpenAI API 金鑰無效，請確認 .env 設定' });
+    }
+    res.status(500).json({ success: false, error: error.message || 'AI 整理失敗，請稍後再試' });
+  }
+});
+
+// ==================== 前端靜態檔案 ====================
+app.use(express.static(path.join(__dirname, '../client/build')));
+app.get('/*splat', (req, res) => {
+  res.sendFile(path.join(__dirname, '../client/build/index.html'));
+});
+
+// ==================== 404 處理 ====================
 app.use((req, res) => {
   res.status(404).json({ 
     success: false, 

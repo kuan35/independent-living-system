@@ -1,5 +1,9 @@
 # ==================== Server 相關 ====================
 
+# SQLite 資料庫
+server/database.db
+
+
 # Google OAuth 憑證
 server/oauth-credentials.json
 server/google-token.json
@@ -22,6 +26,18 @@ server/node_modules/
 client/node_modules/
 
 # ==================== 通用 ====================
+
+# Claude Code 內部資料
+.claude/
+
+# JupyterLab 暫存
+**/.ipynb_checkpoints/
+
+# 個案 JSON 資料（使用者資料，不進版控）
+*自立生活支持計畫*.json
+
+# 前端建置產出
+client/build/
 
 # macOS
 .DS_Store

@@ -15,16 +15,21 @@
   "dependencies": {
     "@google-cloud/speech": "^7.2.1",
     "archiver": "^7.0.1",
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.10.0",
     "cors": "^2.8.6",
     "docx": "^9.5.1",
     "docxtemplater": "^3.67.6",
+    "docxtemplater-image-module-free": "^1.1.1",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "file-saver": "^2.0.5",
     "googleapis": "^171.4.0",
+    "jsonwebtoken": "^9.0.3",
     "jszip-utils": "^0.1.0",
     "multer": "^2.0.2",
     "open": "^8.4.2",
+    "openai": "^6.37.0",
     "pizzip": "^3.2.0"
   },
   "devDependencies": {

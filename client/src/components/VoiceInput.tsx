@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { Button, message, Switch } from 'antd';
-import { AudioOutlined, StopOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { Button, message, Switch, Card } from 'antd';
+import { AudioOutlined, StopOutlined, ReloadOutlined, SaveOutlined, RobotOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
 import './VoiceInput.css';
 
 interface VoiceInputProps {
@@ -23,7 +23,9 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
   const [interimTranscript, setInterimTranscript] = useState('');
   const [autoPunctuation, setAutoPunctuation] = useState(true);
   const [isSupported, setIsSupported] = useState(true);
-  
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -259,12 +261,47 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
     setTranscript('');
     setInterimTranscript('');
     finalTranscriptRef.current = '';
-    
+    setAiSummary(null);
+
     if (pauseTimeoutRef.current) {
       clearTimeout(pauseTimeoutRef.current);
     }
-    
+
     message.info('已清除語音辨識內容');
+  };
+
+  const handleAiSummary = async () => {
+    if (!transcript) return;
+    setIsSummarizing(true);
+    setAiSummary(null);
+    try {
+      const response = await fetch('/api/ai-summary', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
+        body: JSON.stringify({ transcript })
+      });
+      const result = await response.json();
+      if (result.success) {
+        setAiSummary(result.summary);
+      } else {
+        message.error('AI 整理失敗：' + (result.error || '請稍後再試'));
+      }
+    } catch {
+      message.error('無法連接伺服器，請確認後端是否正常運作');
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
+  const handleUseSummary = () => {
+    if (!aiSummary) return;
+    setTranscript(aiSummary);
+    finalTranscriptRef.current = aiSummary;
+    setAiSummary(null);
+    message.success('已使用 AI 整理後的內容');
   };
 
   if (!isSupported) {
@@ -317,6 +354,15 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
               </Button>
               <Button
                 size="large"
+                icon={isSummarizing ? undefined : <RobotOutlined />}
+                onClick={handleAiSummary}
+                loading={isSummarizing}
+                style={{ background: '#1677ff', borderColor: '#1677ff', color: 'white' }}
+              >
+                {isSummarizing ? '整理中...' : 'AI 整理'}
+              </Button>
+              <Button
+                size="large"
                 icon={<ReloadOutlined />}
                 onClick={handleReset}
               >
@@ -353,6 +399,35 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
             )}
           </div>
         </div>
+      )}
+
+      {aiSummary && (
+        <Card
+          style={{ marginTop: '16px', borderColor: '#1677ff', borderWidth: '2px' }}
+          title={
+            <span style={{ color: '#1677ff' }}>
+              <RobotOutlined style={{ marginRight: '8px' }} />
+              AI 整理結果
+            </span>
+          }
+        >
+          <p style={{ fontSize: '15px', lineHeight: '1.8', whiteSpace: 'pre-wrap', color: '#333' }}>
+            {aiSummary}
+          </p>
+          <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+            <Button
+              type="primary"
+              icon={<CheckOutlined />}
+              onClick={handleUseSummary}
+              style={{ background: '#1677ff', borderColor: '#1677ff' }}
+            >
+              使用整理後內容
+            </Button>
+            <Button icon={<CloseOutlined />} onClick={() => setAiSummary(null)}>
+              保留原始內容
+            </Button>
+          </div>
+        </Card>
       )}
 
       {!isRecording && !transcript && (

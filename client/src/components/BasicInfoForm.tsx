@@ -1,5 +1,6 @@
 import React from 'react';
 import { Input, Radio, Space, DatePicker, Checkbox, InputNumber, Select } from 'antd';
+import dayjs from 'dayjs';
 import './BasicInfoForm.css';
 
 const { TextArea } = Input;
@@ -61,7 +62,7 @@ const BasicInfoForm: React.FC<BasicInfoFormProps> = ({ data, onChange }) => {
         <DatePicker 
           size="large"
           placeholder="請選擇日期"
-          value={data.birthday}
+          value={data.birthday ? dayjs(data.birthday) : null}
           onChange={(date) => onChange('birthday', date)}
           style={{ width: '100%', fontSize: '18px' }}
         />
@@ -120,7 +121,7 @@ const BasicInfoForm: React.FC<BasicInfoFormProps> = ({ data, onChange }) => {
         <DatePicker 
           size="large"
           placeholder="請選擇開案日期"
-          value={data.openingDate}
+          value={data.openingDate ? dayjs(data.openingDate) : null}
           onChange={(date) => onChange('openingDate', date)}
           style={{ width: '100%', fontSize: '18px' }}
         />

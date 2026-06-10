@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Button, Progress, message, Modal, Input as AntInput } from 'antd';
+import { Card, Button, Progress, message } from 'antd';
 import { RightOutlined, LeftOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import BasicInfoForm from '../components/BasicInfoForm';
 import WelfareServiceForm from '../components/WelfareServiceForm';
@@ -18,25 +18,10 @@ interface AudioFile {
   displayName: string;
 }
 
-interface FormWizardProps {
-  initialData?: { [key: string]: any };
-  isEditMode?: boolean;
-  caseId?: number;
-  onEditSuccess?: () => void;
-}
-
-const FormWizard: React.FC<FormWizardProps> = ({
-  initialData,
-  isEditMode = false,
-  caseId,
-  onEditSuccess,
-}) => {
+const FormWizard: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(0);
-  const [formData, setFormData] = useState<FormData>(initialData || {});
+  const [formData, setFormData] = useState<FormData>({});
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
-  const [versionModalOpen, setVersionModalOpen] = useState(false);
-  const [versionName, setVersionName] = useState('');
-  const [commitMessage, setCommitMessage] = useState('');
 
   const steps = [
     { title: '基本資料', key: 'basic' },
@@ -94,7 +79,8 @@ const FormWizard: React.FC<FormWizardProps> = ({
 
   const validateStep5 = () => {
     const requiredFields = [
-      { key: 'formDate', label: '填表日期' }
+      { key: 'formDate', label: '填表日期' },
+      { key: 'applicant', label: '申請人' }
     ];
 
     for (const field of requiredFields) {
@@ -103,12 +89,6 @@ const FormWizard: React.FC<FormWizardProps> = ({
         return false;
       }
     }
-
-    if (!formData.applicantSignature) {
-      message.warning('請完成申請人簽名（在簽名欄簽名後點擊「確認簽名」）');
-      return false;
-    }
-
     return true;
   };
 
@@ -132,14 +112,6 @@ const FormWizard: React.FC<FormWizardProps> = ({
 
   const handleSubmit = async () => {
     if (!validateStep5()) {
-      return;
-    }
-
-    // ========== 編輯模式：開版本 Modal ==========
-    if (isEditMode && caseId) {
-      setVersionName('');
-      setCommitMessage('');
-      setVersionModalOpen(true);
       return;
     }
 
@@ -171,14 +143,12 @@ const FormWizard: React.FC<FormWizardProps> = ({
       
       console.log('音檔對應表:', audioFileMapping);
       console.log('開始發送請求到後端...');
-        
-        // 不再需要 ngrok 網址
-      const response = await fetch('/api/submit-form', {
+      
+      const response = await fetch('https://ee92-163-14-137-113.ngrok-free.app/api/submit-form', {
         method: 'POST',
         headers: { 'ngrok-skip-browser-warning': 'true' },
         body: submitData
       });
-
 
       console.log('後端回應狀態:', response.status);
       
@@ -212,45 +182,6 @@ const FormWizard: React.FC<FormWizardProps> = ({
     } catch (error) {
       message.error('網路錯誤，請檢查後端是否正在運作');
       console.error('送出錯誤：', error);
-    }
-  };
-
-  const handleVersionSubmit = async () => {
-    if (!versionName.trim()) {
-      message.warning('請輸入版本名稱');
-      return;
-    }
-    setVersionModalOpen(false);
-    const loadingMessage = message.loading('正在更新個案並產生 Word...', 0);
-    try {
-      const submitData = new FormData();
-      submitData.append('form_data', JSON.stringify(formData));
-      submitData.append('version_name', versionName.trim());
-      if (commitMessage.trim()) submitData.append('commit_message', commitMessage.trim());
-
-      audioFiles.forEach(af => {
-        submitData.append('audioFiles', af.blob, `${af.fieldName}.webm`);
-      });
-
-      const response = await fetch(`/api/admin/cases/${caseId}`, {
-        method: 'PUT',
-        headers: {
-          'ngrok-skip-browser-warning': 'true',
-          Authorization: `Bearer ${localStorage.getItem('admin_token') || ''}`,
-        },
-        body: submitData,
-      });
-      const result = await response.json();
-      loadingMessage();
-      if (result.success) {
-        message.success('個案資料已更新！');
-        onEditSuccess?.();
-      } else {
-        message.error('更新失敗：' + (result.error || '未知錯誤'));
-      }
-    } catch {
-      loadingMessage();
-      message.error('網路錯誤，請確認後端是否正常運作');
     }
   };
 
@@ -431,33 +362,6 @@ const FormWizard: React.FC<FormWizardProps> = ({
           )}
         </div>
       </Card>
-
-      <Modal
-        title="儲存版本"
-        open={versionModalOpen}
-        onOk={handleVersionSubmit}
-        onCancel={() => setVersionModalOpen(false)}
-        okText="確認送出"
-        cancelText="取消"
-      >
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ marginBottom: 8, fontWeight: 600 }}>版本名稱 *</div>
-          <AntInput
-            placeholder="例：第2版、修正就業資料"
-            value={versionName}
-            onChange={e => setVersionName(e.target.value)}
-          />
-        </div>
-        <div>
-          <div style={{ marginBottom: 8, fontWeight: 600 }}>提交說明（選填）</div>
-          <AntInput.TextArea
-            placeholder="例：更新個案的就業現況與服務需求"
-            rows={3}
-            value={commitMessage}
-            onChange={e => setCommitMessage(e.target.value)}
-          />
-        </div>
-      </Modal>
     </div>
   );
 };

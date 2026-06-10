@@ -1,7 +1,14 @@
 const Docxtemplater = require('docxtemplater');
+const ImageModule = require('docxtemplater-image-module-free');
 const PizZip = require('pizzip');
 const fs = require('fs');
 const path = require('path');
+
+// 1x1 透明 PNG，作為簽名缺失時的佔位
+const BLANK_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQAABjE+ibYAAAAASUVORK5CYII=',
+  'base64'
+);
 
 // 格式化日期（民國年月日）
 function formatDate(dateString) {
@@ -275,7 +282,7 @@ function prepareTemplateData(formData) {
     
     // 簽名欄
     formDate: formatDate(formData.formDate),
-    applicant: formData.applicant || '',
+    applicant: formData.applicant || formData.name || '',
     peerSupporter: formData.peerSupporter || '',
     socialWorker: formData.socialWorker || '',
     supervisor: formData.supervisor || ''
@@ -283,34 +290,55 @@ function prepareTemplateData(formData) {
 }
 
 // 生成 Word 文件
-async function generateWord(formData, audioFileMapping, outputPath) {
+async function generateWord(formData, audioFileMapping, outputPath, signatureMapping = {}) {
   try {
     console.log('開始生成 Word 文件...');
-    
+
     // 讀取模板檔案
     const templatePath = path.join(__dirname, '../templates/空_自立生活支持服務計畫表-112.02修.docx');
-    
+
     if (!fs.existsSync(templatePath)) {
       throw new Error('模板檔案不存在: ' + templatePath);
     }
-    
+
     console.log('讀取模板檔案:', templatePath);
     const content = fs.readFileSync(templatePath, 'binary');
-    
+
     const zip = new PizZip(content);
+
+    const imageModule = new ImageModule({
+      centered: false,
+      fileType: 'docx',
+      getImage: function(tagValue) {
+        if (!tagValue || tagValue === '') return BLANK_PNG;
+        if (Buffer.isBuffer(tagValue)) return tagValue;
+        if (typeof tagValue === 'string' && fs.existsSync(tagValue)) {
+          return fs.readFileSync(tagValue);
+        }
+        return BLANK_PNG;
+      },
+      getSize: () => [180, 70],
+    });
+
     const doc = new Docxtemplater(zip, {
+      modules: [imageModule],
       paragraphLoop: true,
       linebreaks: true,
     });
-    
+
     // 準備資料
     console.log('準備模板資料...');
     const templateData = prepareTemplateData(formData);
-    
+
     console.log('填入資料到模板...');
-    
-    // 填入資料
-    doc.render(templateData);
+
+    doc.render({
+      ...templateData,
+      applicantSignature:     signatureMapping.applicantSignature || '',
+      peerSupporterSignature: signatureMapping.peerSupporterSignature || '',
+      socialWorkerSignature:  signatureMapping.socialWorkerSignature || '',
+      supervisorSignature:    signatureMapping.supervisorSignature || '',
+    });
     
     // 生成文件
     console.log('生成文件...');

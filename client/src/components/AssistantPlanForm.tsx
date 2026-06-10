@@ -1,6 +1,7 @@
 import React from 'react';
 import { Input, Alert, DatePicker } from 'antd';
 import VoiceInput from './VoiceInput';
+import SignaturePad from './SignaturePad';
 import dayjs from 'dayjs';
 
 const { TextArea } = Input;
@@ -89,39 +90,26 @@ const AssistantPlanForm: React.FC<AssistantPlanFormProps> = ({ data, onChange, o
       </FormField>
 
       {/* 申請人 */}
-      <FormField 
-        label="申請人" 
-        hint="必填"
-        required
-      >
-        <Input
-          size="large"
-          placeholder="請輸入申請人姓名"
-          value={data.applicant || ''}
-          onChange={(e) => onChange('applicant', e.target.value)}
-          style={{ fontSize: '16px' }}
+      <FormField label="申請人" hint="必填" required>
+        <SignaturePad
+          label="申請人簽名"
+          required
+          value={data.applicantSignature || null}
+          onChange={v => onChange('applicantSignature', v)}
         />
       </FormField>
 
       {/* 同儕支持員 */}
-      <FormField 
-        label="同儕支持員" 
-        hint="選填"
-      >
-        <Input
-          size="large"
-          placeholder="請輸入同儕支持員姓名（選填）"
-          value={data.peerSupporter || ''}
-          onChange={(e) => onChange('peerSupporter', e.target.value)}
-          style={{ fontSize: '16px' }}
+      <FormField label="同儕支持員" hint="選填">
+        <SignaturePad
+          label="同儕支持員簽名（選填）"
+          value={data.peerSupporterSignature || null}
+          onChange={v => onChange('peerSupporterSignature', v)}
         />
       </FormField>
 
       {/* 社工員 */}
-      <FormField 
-        label="社工員" 
-        hint="選填"
-      >
+      <FormField label="社工員" hint="選填，可打字或簽名">
         <Input
           size="large"
           placeholder="請輸入社工員姓名（選填）"
@@ -129,13 +117,15 @@ const AssistantPlanForm: React.FC<AssistantPlanFormProps> = ({ data, onChange, o
           onChange={(e) => onChange('socialWorker', e.target.value)}
           style={{ fontSize: '16px' }}
         />
+        <SignaturePad
+          label="社工員簽名（選填）"
+          value={data.socialWorkerSignature || null}
+          onChange={v => onChange('socialWorkerSignature', v)}
+        />
       </FormField>
 
       {/* 受託單位主管 */}
-      <FormField 
-        label="受託單位主管" 
-        hint="選填"
-      >
+      <FormField label="受託單位主管" hint="選填，可打字或簽名">
         <Input
           size="large"
           placeholder="請輸入受託單位主管姓名（選填）"
@@ -143,11 +133,16 @@ const AssistantPlanForm: React.FC<AssistantPlanFormProps> = ({ data, onChange, o
           onChange={(e) => onChange('supervisor', e.target.value)}
           style={{ fontSize: '16px' }}
         />
+        <SignaturePad
+          label="受託單位主管簽名（選填）"
+          value={data.supervisorSignature || null}
+          onChange={v => onChange('supervisorSignature', v)}
+        />
       </FormField>
 
-      <div style={{ 
-        background: '#fff3cd', 
-        padding: '16px', 
+      <div style={{
+        background: '#fff3cd',
+        padding: '16px',
         borderRadius: '8px',
         marginTop: '32px',
         border: '1px solid #ffc107'

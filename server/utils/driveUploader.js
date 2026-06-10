@@ -7,7 +7,7 @@ const { authorize } = require('./oauthSetup');
 /**
  * 建立 ZIP 壓縮檔
  */
-async function createZipFile(userName, wordFilePath, audioFileMapping, audioDir, archivesDir) {
+async function createZipFile(userName, wordFilePath, audioFileMapping, audioDir, archivesDir, signatureMapping = {}) {
   return new Promise((resolve, reject) => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
     const zipFileName = `${userName}_自立生活支持計畫_${timestamp}.zip`;
@@ -45,8 +45,33 @@ async function createZipFile(userName, wordFilePath, audioFileMapping, audioDir,
       });
     }
 
+    // 加入簽名 PNG
+    Object.values(signatureMapping).forEach(sigPath => {
+      if (sigPath && fs.existsSync(sigPath)) {
+        const sigName = path.basename(sigPath);
+        archive.file(sigPath, { name: `signatures/${sigName}` });
+        console.log(`  ├─ signatures/${sigName}`);
+      }
+    });
+
     archive.finalize();
   });
+}
+
+/**
+ * 在 Drive 中尋找資料夾，找不到就建立
+ */
+async function findOrCreateFolder(drive, name, parentId = null) {
+  let q = `name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  if (parentId) q += ` and '${parentId}' in parents`;
+
+  const list = await drive.files.list({ q, fields: 'files(id, name)', spaces: 'drive' });
+  if (list.data.files.length > 0) return list.data.files[0].id;
+
+  const meta = { name, mimeType: 'application/vnd.google-apps.folder' };
+  if (parentId) meta.parents = [parentId];
+  const created = await drive.files.create({ requestBody: meta, fields: 'id' });
+  return created.data.id;
 }
 
 /**
@@ -96,13 +121,13 @@ function cleanupLocalFiles(filePaths) {
 /**
  * 完整流程：打包並上傳
  */
-async function packageAndUpload(userName, wordFilePath, audioFileMapping, audioDir, archivesDir) {
+async function packageAndUpload(userName, wordFilePath, audioFileMapping, audioDir, archivesDir, signatureMapping = {}) {
   try {
     console.log('==================== 開始打包並上傳 ====================');
 
     // 1. 建立 ZIP 檔案
     console.log('步驟 1/3: 建立 ZIP 檔案...');
-    const zipFilePath = await createZipFile(userName, wordFilePath, audioFileMapping, audioDir, archivesDir);
+    const zipFilePath = await createZipFile(userName, wordFilePath, audioFileMapping, audioDir, archivesDir, signatureMapping);
 
     // 2. 上傳到 Google Drive
     console.log('步驟 2/3: 上傳到 Google Drive...');
@@ -132,9 +157,38 @@ async function packageAndUpload(userName, wordFilePath, audioFileMapping, audioD
   }
 }
 
+/**
+ * 上傳 JSON 紀錄到 Google Drive（個案JSON紀錄／姓名子資料夾）
+ */
+async function uploadJsonRecord(formData, userName) {
+  const { Readable } = require('stream');
+  const auth = await authorize();
+  const drive = google.drive({ version: 'v3', auth });
+
+  const rootFolderId = await findOrCreateFolder(drive, '個案JSON紀錄');
+  console.log(`✓ 個案JSON紀錄 資料夾 ID: ${rootFolderId}`);
+
+  const subFolderId = await findOrCreateFolder(drive, userName, rootFolderId);
+
+  const ts = new Date().toISOString().replace('T', '_').replace(/:/g, '-').slice(0, 19);
+  const fileName = `${userName}_自立生活支持計畫_${ts}.json`;
+  const jsonContent = JSON.stringify(formData, null, 2);
+
+  const response = await drive.files.create({
+    requestBody: { name: fileName, parents: [subFolderId] },
+    media: { mimeType: 'application/json', body: Readable.from([jsonContent]) },
+    fields: 'id, name, webViewLink',
+  });
+
+  console.log(`✓ JSON 紀錄已上傳: ${response.data.name}`);
+  console.log(`  連結: ${response.data.webViewLink}`);
+  return response.data.id;
+}
+
 module.exports = {
   createZipFile,
   uploadToDrive,
   cleanupLocalFiles,
-  packageAndUpload
+  packageAndUpload,
+  uploadJsonRecord,
 };
