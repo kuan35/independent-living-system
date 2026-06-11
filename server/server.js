@@ -5,7 +5,7 @@ const multer = require('multer');
 const fs = require('fs');
 const { generateWord } = require('./utils/wordGenerator');
 const { packageAndUpload, uploadJsonRecord } = require('./utils/driveUploader');
-require('dotenv').config();
+require('dotenv').config({ override: true });
 const { initDatabase, db, getUniqueCaseName, insertVersion } = require('./utils/database');
 initDatabase();
 
@@ -92,31 +92,32 @@ app.post('/api/save-draft', (req, res) => {
   }
 });
 
-app.post('/api/speech-to-text', upload.single('audio'), (req, res) => {
+app.post('/api/speech-to-text', upload.single('audio'), async (req, res) => {
+  const filePath = req.file ? req.file.path : null;
   try {
     if (!req.file) {
-      return res.status(400).json({ 
-        success: false, 
-        error: '沒有收到音檔' 
-      });
+      return res.status(400).json({ success: false, error: '沒有收到音檔' });
     }
-    
-    console.log('\n========== 收到音檔 ==========');
-    console.log('檔案名稱:', req.file.filename);
-    console.log('檔案大小:', req.file.size, 'bytes');
-    console.log('================================\n');
-    
-    res.json({ 
-      success: true, 
-      text: '這是模擬的語音辨識結果(之後會改為真實的語音轉文字)',
-      audioFile: req.file.filename
+
+    console.log('\n========== Whisper 語音辨識 ==========');
+    console.log('檔案:', req.file.filename, '大小:', req.file.size, 'bytes');
+
+    const OpenAILib = require('openai');
+    const client = new OpenAILib.OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const transcription = await client.audio.transcriptions.create({
+      file: fs.createReadStream(filePath),
+      model: 'whisper-1',
+      language: 'zh',
     });
+
+    console.log('辨識結果:', transcription.text);
+    console.log('========================================\n');
+    res.json({ success: true, text: transcription.text });
   } catch (error) {
     console.error('語音轉文字錯誤：', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    res.status(500).json({ success: false, error: error.message });
+  } finally {
+    if (filePath) try { fs.unlinkSync(filePath); } catch {}
   }
 });
 

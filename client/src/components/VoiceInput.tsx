@@ -18,7 +18,10 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
   fieldName = "語音輸入",
   onAudioSave  // 新增：從 props 解構
 }) => {
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [interimTranscript, setInterimTranscript] = useState('');
   const [autoPunctuation, setAutoPunctuation] = useState(true);
@@ -128,43 +131,72 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
     return recognition;
   };
 
+  const transcribeWithWhisper = async () => {
+    if (audioChunksRef.current.length === 0) return;
+    setIsTranscribing(true);
+    try {
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'recording.webm');
+      const response = await fetch('/api/speech-to-text', {
+        method: 'POST',
+        headers: { 'ngrok-skip-browser-warning': 'true' },
+        body: formData,
+      });
+      const result = await response.json();
+      if (result.success && result.text) {
+        finalTranscriptRef.current = result.text;
+        setTranscript(result.text);
+        message.success('語音辨識完成');
+      } else {
+        message.error('語音辨識失敗，請重試');
+      }
+    } catch {
+      message.error('無法連接伺服器');
+    } finally {
+      setIsTranscribing(false);
+    }
+  };
+
   const startRecording = async () => {
     try {
       console.log('開始錄音...');
-      
-      const recognition = initRecognition();
-      if (!recognition) {
-        return;
-      }
-      
-      recognitionRef.current = recognition;
+
       finalTranscriptRef.current = '';
       setTranscript('');
       setInterimTranscript('');
-      
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       console.log('麥克風權限已獲得');
-      
+
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
 
       mediaRecorder.onstop = () => {
         stream.getTracks().forEach(track => track.stop());
+        // 手機：MediaRecorder 停止後自動送 Whisper 辨識
+        if (isMobile) transcribeWithWhisper();
       };
 
       mediaRecorder.start();
       console.log('音檔錄製已開始');
-      
+
       setIsRecording(true);
-      recognition.start();
-      
+
+      // 桌機：同時啟動 Web Speech API 做即時文字預覽
+      if (!isMobile) {
+        const recognition = initRecognition();
+        if (recognition) {
+          recognitionRef.current = recognition;
+          recognition.start();
+        }
+      }
+
       message.success('開始錄音，請開始說話...');
     } catch (error: any) {
       console.error('錄音啟動失敗:', error);
@@ -326,9 +358,11 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
               size="large"
               icon={<AudioOutlined />}
               onClick={startRecording}
+              loading={isTranscribing}
+              disabled={isTranscribing}
               className="record-btn"
             >
-              開始語音輸入
+              {isTranscribing ? '辨識中...' : '開始語音輸入'}
             </Button>
           ) : (
             <Button
@@ -386,6 +420,13 @@ const VoiceInput: React.FC<VoiceInputProps> = ({
         <div className="recording-indicator">
           <div className="recording-dot"></div>
           <span>正在錄音中，請說話...</span>
+        </div>
+      )}
+
+      {isTranscribing && (
+        <div className="recording-indicator" style={{ background: '#e6f4ff', borderColor: '#1677ff' }}>
+          <div className="recording-dot" style={{ background: '#1677ff', animation: 'none', opacity: 0.8 }}></div>
+          <span style={{ color: '#1677ff' }}>語音辨識中，請稍候...</span>
         </div>
       )}
 
