@@ -90,14 +90,7 @@ const BasicInfoForm: React.FC<BasicInfoFormProps> = ({ data, onChange }) => {
             >
               社會局轉介
             </Radio>
-            <Radio 
-              value="需求評估中心轉介" 
-              style={{ fontSize: '18px', padding: '10px' }}
-              onClick={() => handleRadioClick('caseSource', '需求評估中心轉介', data.caseSource)}
-            >
-              需求評估中心轉介
-            </Radio>
-            <Radio 
+<Radio 
               value="其他" 
               style={{ fontSize: '18px', padding: '10px' }}
               onClick={() => handleRadioClick('caseSource', '其他', data.caseSource)}

@@ -6,6 +6,7 @@ const fs = require('fs');
 const { generateWord } = require('./utils/wordGenerator');
 const { packageAndUpload, uploadJsonRecord } = require('./utils/driveUploader');
 require('dotenv').config({ override: true });
+globalThis.File = require('node:buffer').File;
 const { initDatabase, db, getUniqueCaseName, insertVersion } = require('./utils/database');
 initDatabase();
 
